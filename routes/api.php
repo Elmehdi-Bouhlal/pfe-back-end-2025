@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:sanctum'])->group(function(){
     Route::get('/user',[UserController::class,'index'])->name('user.index');
     Route::post('/logout',[UserController::class,'logout'])->name('user.logout');
+    Route::get('/users-list',[UserController::class,'userList'])->name('user.list');
 });
 
 // routes don't need to have a token

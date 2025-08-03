@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 
 class UserController extends Controller
@@ -36,5 +37,12 @@ class UserController extends Controller
         request()->session()->regenerate();
 
         return response()->json(['success' => true , 'message' => 'User has been connected with success', 'user' => Auth::user()]);
+    }
+
+    public function userList(){
+        tryCatchError(function(){
+            $allUser = User::All();
+            return response()->json(['success'=>true , 'users' => (object) $allUser],200);
+        });
     }
 }
