@@ -2,11 +2,11 @@
 
 
 if(!function_exists('tryCatchError')){
-    function tryCatchError(callable $func){
+    function tryCatchError($func){
         try{
             $func();
         }catch(\Exception $err){
-            dd($err);
+            return response()->json(["success" => false , "eroor" => $err]);
         }
     }
 }
