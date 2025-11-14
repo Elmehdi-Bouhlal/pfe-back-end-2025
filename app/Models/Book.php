@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
 
 class Book extends Model
@@ -41,6 +42,17 @@ class Book extends Model
         'location_city',
         'location_region',
         'location_country',
+        'quantity',
+        'payment_methods', 
+        'shipping_delay_days',
+        'shipping_cities',
+        'shipping_cost',
+        'free_shipping_above',
+        'free_shipping_threshold',
+        // Nouveaux champs pour les livres numériques
+        'pages',
+        'download_limit',
+        'sample_content',
     ];
 
     protected $casts = [
@@ -55,6 +67,15 @@ class Book extends Model
         'share_count' => 'integer',
         'published_at' => 'datetime',
         'sold_at' => 'datetime',
+        'payment_methods' => 'array',
+        'shipping_cities' => 'array',
+        'free_shipping_above' => 'boolean',
+        'pages' => 'integer',
+        'download_limit' => 'integer',
+        'quantity' => 'integer',
+        'shipping_delay_days' => 'integer',
+        'shipping_cost' => 'decimal:2',
+        'free_shipping_threshold' => 'decimal:2',
     ];
 
     protected $dates = [
@@ -85,6 +106,12 @@ class Book extends Model
     public function primaryImage()
     {
         return $this->hasOne(BookImage::class)->where('is_primary', true);
+    }
+
+    // Nouvelle relation pour les fichiers numériques
+    public function digitalFiles()
+    {
+        return $this->hasMany(BookDigitalFile::class);
     }
 
     public function categories()
@@ -141,6 +168,17 @@ class Book extends Model
         return $query->where('book_type', $type);
     }
 
+    // Nouveaux scopes pour les livres numériques
+    public function scopeDigital(Builder $query)
+    {
+        return $query->where('book_type', 'digital');
+    }
+
+    public function scopePhysical(Builder $query)
+    {
+        return $query->where('book_type', 'physical');
+    }
+
     public function scopeInLocation(Builder $query, string $city = null, string $region = null)
     {
         if ($city) {
@@ -189,7 +227,7 @@ class Book extends Model
         return $query->orderByDesc('published_at');
     }
 
-    // ========== MÉTHODES ==========
+    // ========== MÉTHODES EXISTANTES ==========
 
     public function isLikedBy(User $user = null): bool
     {
@@ -276,4 +314,240 @@ class Book extends Model
             'published_at' => now(),
         ]);
     }
+
+    // ========== NOUVELLES MÉTHODES POUR LES LIVRES NUMÉRIQUES ==========
+
+    /**
+     * Obtenir le fichier PDF principal
+     */
+    public function getPdfFile()
+    {
+        return $this->digitalFiles()->where('file_type', 'pdf')->where('is_active', true)->first();
+    }
+
+    /**
+     * Obtenir l'image de couverture (digital ou physique)
+     */
+    public function getCoverImage()
+    {
+        // Pour les livres numériques, chercher d'abord dans les images avec type cover
+        if ($this->book_type === 'digital') {
+            $coverImage = $this->images()->where('image_type', 'cover')->first();
+            if ($coverImage) {
+                return $coverImage;
+            }
+        }
+        
+        // Sinon, chercher l'image primaire
+        return $this->images()->where('is_primary', true)->first();
+    }
+
+    /**
+     * Obtenir l'URL de téléchargement du PDF
+     */
+    public function getDownloadUrl()
+    {
+        if ($this->book_type !== 'digital') {
+            return null;
+        }
+        
+        $pdfFile = $this->getPdfFile();
+        return $pdfFile ? Storage::url($pdfFile->file_path) : null;
+    }
+
+    /**
+     * Vérifier si l'utilisateur peut télécharger ce livre
+     */
+    public function canBeDownloadedBy(User $user)
+    {
+        if ($this->book_type !== 'digital') {
+            return false;
+        }
+        
+        // Propriétaire du livre peut toujours télécharger
+        if ($this->user_id === $user->id) {
+            return true;
+        }
+        
+        // TODO: Vérifier si l'utilisateur a acheté ce livre
+        // return $this->purchases()->where('user_id', $user->id)->where('status', 'completed')->exists();
+        
+        return false; // Temporaire jusqu'à l'implémentation du système d'achat
+    }
+
+    /**
+     * Incrémenter le compteur de téléchargements
+     */
+    public function incrementDownloadCount(): void
+    {
+        if ($this->book_type === 'digital') {
+            $this->increment('download_count');
+        }
+    }
+
+    /**
+     * Vérifier si la limite de téléchargement est atteinte pour un utilisateur
+     */
+    public function hasReachedDownloadLimit(User $user): bool
+    {
+        if ($this->book_type !== 'digital' || !$this->download_limit) {
+            return false;
+        }
+
+        // TODO: Compter les téléchargements de cet utilisateur pour ce livre
+        // $userDownloads = BookDownload::where('book_id', $this->id)
+        //                              ->where('user_id', $user->id)
+        //                              ->count();
+        // return $userDownloads >= $this->download_limit;
+        
+        return false; // Temporaire
+    }
+
+    /**
+     * Obtenir la taille formatée du fichier PDF
+     */
+    public function getFormattedFileSizeAttribute(): ?string
+    {
+        if ($this->book_type !== 'digital') {
+            return null;
+        }
+
+        $pdfFile = $this->getPdfFile();
+        if (!$pdfFile) {
+            return null;
+        }
+
+        $bytes = $pdfFile->file_size;
+        if ($bytes === 0) return '0 Bytes';
+        
+        $k = 1024;
+        $sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        $i = floor(log($bytes) / log($k));
+        
+        return round($bytes / pow($k, $i), 2) . ' ' . $sizes[$i];
+    }
+
+    /**
+     * Vérifier si le livre a un PDF valide
+     */
+    public function hasPdfFile(): bool
+    {
+        if ($this->book_type !== 'digital') {
+            return false;
+        }
+
+        $pdfFile = $this->getPdfFile();
+        return $pdfFile && Storage::exists($pdfFile->file_path);
+    }
+
+    /**
+     * Obtenir les statistiques du livre numérique
+     */
+    public function getDigitalStats(): array
+    {
+        if ($this->book_type !== 'digital') {
+            return [];
+        }
+
+        return [
+            'downloads' => $this->download_count,
+            'views' => $this->view_count,
+            'likes' => $this->like_count,
+            'file_size' => $this->formatted_file_size,
+            'pages' => $this->pages,
+            'download_limit' => $this->download_limit,
+        ];
+    }
+
+    /**
+     * Scope pour les livres avec des fichiers PDF valides
+     */
+    public function scopeWithValidPdf(Builder $query)
+    {
+        return $query->digital()
+                    ->whereHas('digitalFiles', function($q) {
+                        $q->where('file_type', 'pdf')->where('is_active', true);
+                    });
+    }
+    /**
+ * Relation avec les achats de ce livre
+ */
+public function purchases()
+{
+    return $this->hasMany(BookPurchase::class);
+}
+
+/**
+ * Relation avec les utilisateurs qui ont acheté ce livre
+ */
+public function purchasers()
+{
+    return $this->belongsToMany(User::class, 'book_purchases')
+                ->withPivot(['amount_paid', 'status', 'purchased_at'])
+                ->withTimestamps();
+}
+
+/**
+ * Relation avec les progressions de lecture
+ */
+public function readingProgress()
+{
+    return $this->hasMany(ReadingProgress::class);
+}
+
+/**
+ * Relation avec les notes de lecture
+ */
+public function readingNotes()
+{
+    return $this->hasMany(ReadingNote::class);
+}
+
+/**
+ * Relation avec les téléchargements
+ */
+public function downloads()
+{
+    return $this->hasMany(BookDownload::class);
+}
+
+/**
+ * Relation avec les interactions IA
+ */
+public function aiInteractions()
+{
+    return $this->hasMany(AiInteraction::class);
+}
+
+/**
+ * Vérifier si l'utilisateur a acheté ce livre
+ */
+public function isPurchasedBy(User $user): bool
+{
+    return $this->purchases()
+                ->where('user_id', $user->id)
+                ->where('status', 'completed')
+                ->exists();
+}
+
+/**
+ * Obtenir la progression de lecture d'un utilisateur
+ */
+public function getReadingProgressFor(User $user)
+{
+    return $this->readingProgress()
+                ->where('user_id', $user->id)
+                ->first();
+}
+
+/**
+ * Obtenir les notes de lecture d'un utilisateur
+ */
+public function getNotesFor(User $user)
+{
+    return $this->readingNotes()
+                ->where('user_id', $user->id)
+                ->orderBy('page_number')
+                ->get();
+}
 }

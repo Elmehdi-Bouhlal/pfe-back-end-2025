@@ -8,6 +8,7 @@ use App\Models\Book;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Log;
 
 class FavoritesController extends Controller
 {
@@ -18,9 +19,9 @@ class FavoritesController extends Controller
     {
         try {
             $user = Auth::user();
+            Log::info("user" . json_encode($user));
             $perPage = $request->get('per_page', 20);
             $page = $request->get('page', 1);
-            
             $query = BookLike::where('user_id', $user->id)
                 ->with([
                     'book' => function($q) {
@@ -33,7 +34,7 @@ class FavoritesController extends Controller
                         ]);
                     },
                     'book.images' => function($q) {
-                        $q->select('id', 'book_id', 'image_url', 'is_primary')
+                        $q->select('id', 'book_id', 'image_path', 'is_primary')
                           ->orderBy('is_primary', 'desc')
                           ->orderBy('created_at', 'asc');
                     }
@@ -45,7 +46,7 @@ class FavoritesController extends Controller
             // Ajouter l'URL de la première image à chaque livre
             foreach ($favorites->items() as $favorite) {
                 if ($favorite->book && $favorite->book->images->isNotEmpty()) {
-                    $favorite->book->image_url = $favorite->book->images->first()->image_url;
+                    $favorite->book->image_path = $favorite->book->images->first()->image_path;
                 } else {
                     $favorite->book->image_url = null;
                 }

@@ -361,4 +361,210 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
             return false;
         }
     }
+    /**
+     * Generate a summary from given prompt
+     */
+    public function generateSummary(string $prompt): string
+    {
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json'
+            ])
+            ->timeout(300)
+            ->post($this->baseUrl . '/chat/completions', [
+                'model' => $this->model,
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un assistant IA spécialisé dans la création de résumés clairs et concis. Réponds toujours en français avec des points bien structurés.'
+                    ],
+                    [
+                        'role' => 'user', 
+                        'content' => $prompt
+                    ]
+                ],
+                'max_tokens' => 1000,
+                'temperature' => 0.3,
+            ]);
+
+            if (!$response->successful()) {
+                throw new Exception("ChatGPT API Error");
+            }
+
+            return trim($response->json()['choices'][0]['message']['content']);
+            
+        } catch (Exception $e) {
+            Log::error('ChatGPT Summary Error', ['error' => $e->getMessage()]);
+            throw new Exception('Failed to generate summary: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Explain concepts from given prompt
+     */
+    public function explainConcepts(string $prompt): string
+    {
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json'
+            ])
+            ->timeout(300)
+            ->post($this->baseUrl . '/chat/completions', [
+                'model' => $this->model,
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un enseignant expert qui explique des concepts complexes de manière simple et accessible. Réponds toujours en français.'
+                    ],
+                    [
+                        'role' => 'user', 
+                        'content' => $prompt
+                    ]
+                ],
+                'max_tokens' => 1500,
+                'temperature' => 0.5,
+            ]);
+
+            if (!$response->successful()) {
+                throw new Exception("ChatGPT API Error");
+            }
+
+            return trim($response->json()['choices'][0]['message']['content']);
+            
+        } catch (Exception $e) {
+            Log::error('ChatGPT Explanation Error', ['error' => $e->getMessage()]);
+            throw new Exception('Failed to explain concepts: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Chat with context about book content
+     */
+    public function chatWithContext(string $question, string $context): string
+    {
+        try {
+            $prompt = $context . "\n\nQuestion: " . $question;
+            
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json'
+            ])
+            ->timeout(300)
+            ->post($this->baseUrl . '/chat/completions', [
+                'model' => $this->model,
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un assistant de lecture intelligent qui aide les utilisateurs à comprendre leurs livres. Réponds toujours en français de manière conversationnelle et utile.'
+                    ],
+                    [
+                        'role' => 'user', 
+                        'content' => $prompt
+                    ]
+                ],
+                'max_tokens' => 800,
+                'temperature' => 0.7,
+            ]);
+
+            if (!$response->successful()) {
+                throw new Exception("ChatGPT API Error");
+            }
+
+            return trim($response->json()['choices'][0]['message']['content']);
+            
+        } catch (Exception $e) {
+            Log::error('ChatGPT Chat Error', ['error' => $e->getMessage()]);
+            throw new Exception('Failed to generate chat response: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get book recommendations
+     */
+    public function getRecommendations(string $prompt): array
+    {
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json'
+            ])
+            ->timeout(300)
+            ->post($this->baseUrl . '/chat/completions', [
+                'model' => $this->model,
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un bibliothécaire expert qui recommande des livres basés sur les préférences de lecture. Réponds toujours en français avec des recommandations détaillées.'
+                    ],
+                    [
+                        'role' => 'user', 
+                        'content' => $prompt
+                    ]
+                ],
+                'max_tokens' => 2000,
+                'temperature' => 0.8,
+            ]);
+
+            if (!$response->successful()) {
+                throw new Exception("ChatGPT API Error");
+            }
+
+            $content = trim($response->json()['choices'][0]['message']['content']);
+            
+            return [
+                'type' => 'text',
+                'content' => $content
+            ];
+            
+        } catch (Exception $e) {
+            Log::error('ChatGPT Recommendations Error', ['error' => $e->getMessage()]);
+            throw new Exception('Failed to generate recommendations: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Generate study notes
+     */
+    public function generateStudyNotes(string $prompt): array
+    {
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json'
+            ])
+            ->timeout(300)
+            ->post($this->baseUrl . '/chat/completions', [
+                'model' => $this->model,
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un expert en méthodes d\'étude qui crée des notes d\'étude efficaces et bien organisées. Réponds toujours en français.'
+                    ],
+                    [
+                        'role' => 'user', 
+                        'content' => $prompt
+                    ]
+                ],
+                'max_tokens' => 3000,
+                'temperature' => 0.4,
+            ]);
+
+            if (!$response->successful()) {
+                throw new Exception("ChatGPT API Error");
+            }
+
+            $content = trim($response->json()['choices'][0]['message']['content']);
+            
+            return [
+                'type' => 'text',
+                'content' => $content
+            ];
+            
+        } catch (Exception $e) {
+            Log::error('ChatGPT Study Notes Error', ['error' => $e->getMessage()]);
+            throw new Exception('Failed to generate study notes: ' . $e->getMessage());
+        }
+    }
 }

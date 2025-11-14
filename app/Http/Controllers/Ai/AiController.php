@@ -304,7 +304,7 @@ class AiController extends Controller
     /**
      * Return error response
      */
-    private function errorResponse(string $message, int $status = 500, array $details = []): JsonResponse
+    private function errorResponse(string $message, int $status = 500, array $details = [])
     {
         $response = [
             'success' => false,
@@ -317,5 +317,372 @@ class AiController extends Controller
         }
 
         return response()->json($response, $status);
+    }
+
+
+        public function summarizePage(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'text' => 'required|string|max:50000',
+                'book_title' => 'required|string|max:255',
+                'page_number' => 'required|integer|min:1'
+            ]);
+
+            if ($validator->fails()) {
+                Log::error('error ai summarize : '.$validator->errors());
+                throw new Exception($validator->errors());
+            }
+
+            $text = $request->input('text');
+            $bookTitle = $request->input('book_title');
+            $pageNumber = $request->input('page_number');
+
+            // Prepare prompt for summarization
+            $prompt = $this->buildSummaryPrompt($text, $bookTitle, $pageNumber);
+
+            // Get summary from ChatGPT
+            $summary = $this->chatGPTService->generateSummary($prompt);
+
+            Log::info('Page summarized successfully', [
+                'book_title' => $bookTitle,
+                'page_number' => $pageNumber,
+                'text_length' => strlen($text)
+            ]);
+
+            return $this->successResponse('Page summarized successfully', [
+                'summary' => $summary,
+                'book_title' => $bookTitle,
+                'page_number' => $pageNumber,
+                'word_count' => str_word_count($text)
+            ]);
+
+        } catch (Exception $e) {
+            Log::error('Error summarizing page', [
+                'error' => $e->getMessage(),
+                'book_title' => $request->input('book_title', 'unknown'),
+                'page_number' => $request->input('page_number', 'unknown')
+            ]);
+
+            return $this->errorResponse(
+                'Failed to summarize page. Please try again.',
+                500
+            );
+        }
+    }
+
+    /**
+     * Explain key concepts from a page
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function explainConcepts(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'text' => 'required|string|max:50000',
+                'book_title' => 'required|string|max:255',
+                'page_number' => 'required|integer|min:1'
+            ]);
+
+            if ($validator->fails()) {
+                return $this->errorResponse('Invalid data provided', 422, $validator->errors());
+            }
+
+            $text = $request->input('text');
+            $bookTitle = $request->input('book_title');
+            $pageNumber = $request->input('page_number');
+
+            // Prepare prompt for concept explanation
+            $prompt = $this->buildConceptExplanationPrompt($text, $bookTitle, $pageNumber);
+
+            // Get explanation from ChatGPT
+            $explanation = $this->chatGPTService->explainConcepts($prompt);
+
+            Log::info('Concepts explained successfully', [
+                'book_title' => $bookTitle,
+                'page_number' => $pageNumber
+            ]);
+
+            return $this->successResponse('Concepts explained successfully', [
+                'explanation' => $explanation,
+                'book_title' => $bookTitle,
+                'page_number' => $pageNumber
+            ]);
+
+        } catch (Exception $e) {
+            Log::error('Error explaining concepts', [
+                'error' => $e->getMessage(),
+                'book_title' => $request->input('book_title', 'unknown')
+            ]);
+
+            return $this->errorResponse(
+                'Failed to explain concepts. Please try again.',
+                500
+            );
+        }
+    }
+
+    /**
+     * Chat about book content with AI assistant
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function chatAboutBook(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'question' => 'required|string|max:1000',
+                'page_text' => 'required|string|max:50000',
+                'book_title' => 'required|string|max:255',
+                'page_number' => 'required|integer|min:1',
+                'chat_history' => 'nullable|array|max:20'
+            ]);
+
+            if ($validator->fails()) {
+                return $this->errorResponse('Invalid data provided', 422, $validator->errors());
+            }
+
+            $question = $request->input('question');
+            $pageText = $request->input('page_text');
+            $bookTitle = $request->input('book_title');
+            $pageNumber = $request->input('page_number');
+            $chatHistory = $request->input('chat_history', []);
+
+            // Build conversation context
+            $context = $this->buildChatContext($pageText, $bookTitle, $pageNumber, $chatHistory);
+
+            // Get AI response
+            $answer = $this->chatGPTService->chatWithContext($question, $context);
+
+            Log::info('AI chat response generated', [
+                'book_title' => $bookTitle,
+                'page_number' => $pageNumber,
+                'question_length' => strlen($question)
+            ]);
+
+            return $this->successResponse('Response generated successfully', [
+                'answer' => $answer,
+                'question' => $question,
+                'page_number' => $pageNumber,
+                'timestamp' => now()->toISOString()
+            ]);
+
+        } catch (Exception $e) {
+            Log::error('Error in AI chat', [
+                'error' => $e->getMessage(),
+                'question' => $request->input('question', 'unknown')
+            ]);
+
+            return $this->errorResponse(
+                'Sorry, I encountered an error. Please try again.',
+                500
+            );
+        }
+    }
+
+    /**
+     * Get AI-powered reading recommendations based on current book
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function getReadingRecommendations(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'book_title' => 'required|string|max:255',
+                'book_author' => 'required|string|max:255',
+                'book_genre' => 'nullable|string|max:100',
+                'current_progress' => 'nullable|integer|min:0|max:100',
+                'user_preferences' => 'nullable|array'
+            ]);
+
+            if ($validator->fails()) {
+                return $this->errorResponse('Invalid data provided', 422, $validator->errors());
+            }
+
+            $bookTitle = $request->input('book_title');
+            $bookAuthor = $request->input('book_author');
+            $bookGenre = $request->input('book_genre');
+            $userPreferences = $request->input('user_preferences', []);
+
+            // Build recommendation prompt
+            $prompt = $this->buildRecommendationPrompt($bookTitle, $bookAuthor, $bookGenre, $userPreferences);
+
+            // Get recommendations from AI
+            $recommendations = $this->chatGPTService->getRecommendations($prompt);
+
+            return $this->successResponse('Recommendations generated successfully', [
+                'recommendations' => $recommendations,
+                'based_on_book' => $bookTitle,
+                'generated_at' => now()->toISOString()
+            ]);
+
+        } catch (Exception $e) {
+            Log::error('Error generating recommendations', [
+                'error' => $e->getMessage(),
+                'book_title' => $request->input('book_title', 'unknown')
+            ]);
+
+            return $this->errorResponse(
+                'Failed to generate recommendations. Please try again.',
+                500
+            );
+        }
+    }
+
+    /**
+     * Generate study notes from book content
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function generateStudyNotes(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'text' => 'required|string|max:50000',
+                'book_title' => 'required|string|max:255',
+                'chapter_title' => 'nullable|string|max:255',
+                'note_type' => 'required|in:bullet_points,flashcards,outline,mind_map'
+            ]);
+
+            if ($validator->fails()) {
+                return $this->errorResponse('Invalid data provided', 422, $validator->errors());
+            }
+
+            $text = $request->input('text');
+            $bookTitle = $request->input('book_title');
+            $chapterTitle = $request->input('chapter_title');
+            $noteType = $request->input('note_type');
+
+            // Build study notes prompt
+            $prompt = $this->buildStudyNotesPrompt($text, $bookTitle, $chapterTitle, $noteType);
+
+            // Generate study notes
+            $studyNotes = $this->chatGPTService->generateStudyNotes($prompt);
+
+            return $this->successResponse('Study notes generated successfully', [
+                'study_notes' => $studyNotes,
+                'note_type' => $noteType,
+                'book_title' => $bookTitle,
+                'chapter_title' => $chapterTitle
+            ]);
+
+        } catch (Exception $e) {
+            Log::error('Error generating study notes', [
+                'error' => $e->getMessage(),
+                'note_type' => $request->input('note_type', 'unknown')
+            ]);
+
+            return $this->errorResponse(
+                'Failed to generate study notes. Please try again.',
+                500
+            );
+        }
+    }
+
+    // Private helper methods
+
+    private function buildSummaryPrompt(string $text, string $bookTitle, int $pageNumber): string
+    {
+        return "Please provide a concise summary of the following text from page {$pageNumber} of the book '{$bookTitle}'. 
+        Focus on the main points and key information. Keep the summary clear and informative.
+
+        Text to summarize:
+        {$text}
+
+        Please respond in French and structure your summary with clear bullet points for better readability.";
+    }
+
+    private function buildConceptExplanationPrompt(string $text, string $bookTitle, int $pageNumber): string
+    {
+        return "Please identify and explain the key concepts, terms, or ideas from this text from page {$pageNumber} of '{$bookTitle}'. 
+        Provide clear explanations that would help a reader better understand the content.
+
+        Text to analyze:
+        {$text}
+
+        Please respond in French and organize your explanations with:
+        1. Key concepts identified
+        2. Clear explanations for each concept
+        3. How these concepts relate to each other if applicable";
+    }
+
+    private function buildChatContext(string $pageText, string $bookTitle, int $pageNumber, array $chatHistory): string
+    {
+        $context = "You are an AI reading assistant helping a user understand the book '{$bookTitle}'. 
+        The user is currently reading page {$pageNumber}. Here is the current page content:
+
+        {$pageText}
+
+        ";
+
+        if (!empty($chatHistory)) {
+            $context .= "Previous conversation:\n";
+            foreach (array_slice($chatHistory, -5) as $message) {
+                $role = $message['type'] === 'user' ? 'User' : 'Assistant';
+                $context .= "{$role}: {$message['content']}\n";
+            }
+        }
+
+        $context .= "\nPlease answer the user's questions about this content in French. Be helpful, accurate, and educational.";
+
+        return $context;
+    }
+
+    private function buildRecommendationPrompt(string $bookTitle, string $bookAuthor, ?string $bookGenre, array $userPreferences): string
+    {
+        $prompt = "Based on the book '{$bookTitle}' by {$bookAuthor}";
+        
+        if ($bookGenre) {
+            $prompt .= " (Genre: {$bookGenre})";
+        }
+
+        $prompt .= ", please recommend 5 similar books that the reader might enjoy. ";
+
+        if (!empty($userPreferences)) {
+            $prompt .= "Consider these user preferences: " . implode(', ', $userPreferences) . ". ";
+        }
+
+        $prompt .= "For each recommendation, provide:
+        1. Book title and author
+        2. Brief description (2-3 sentences)
+        3. Why it's similar to the current book
+        4. Difficulty level
+
+        Please respond in French and format as a numbered list.";
+
+        return $prompt;
+    }
+
+    private function buildStudyNotesPrompt(string $text, string $bookTitle, ?string $chapterTitle, string $noteType): string
+    {
+        $typeInstructions = [
+            'bullet_points' => 'Create organized bullet points highlighting the main ideas and supporting details.',
+            'flashcards' => 'Create question-answer pairs suitable for flashcard study.',
+            'outline' => 'Create a hierarchical outline with main topics and subtopics.',
+            'mind_map' => 'Create a mind map structure with central themes and connected concepts.'
+        ];
+
+        $instruction = $typeInstructions[$noteType] ?? 'Create organized study notes.';
+
+        $prompt = "Create study notes from the following text from the book '{$bookTitle}'";
+        
+        if ($chapterTitle) {
+            $prompt .= ", chapter '{$chapterTitle}'";
+        }
+
+        $prompt .= ". {$instruction}
+
+        Text to process:
+        {$text}
+
+        Please respond in French and make the notes clear, concise, and easy to study from.";
+
+        return $prompt;
     }
 }

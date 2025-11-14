@@ -164,7 +164,56 @@ class User extends Authenticatable
         return $this->hasMany(BookReport::class, 'reporter_id');
     }
 
-    // ========== MÉTHODES UTILES ==========
+    /**
+     * Cart items belonging to this user
+     */
+    public function cartItems()
+    {
+        return $this->hasMany(CartItem::class);
+    }
+
+    /**
+     * Books in user's cart
+     */
+    public function cartBooks()
+    {
+        return $this->belongsToMany(Book::class, 'cart_items')
+                    ->withPivot(['quantity', 'added_at'])
+                    ->withTimestamps();
+    }
+
+    // ========== MÉTHODES MANQUANTES POUR LE PROFIL ==========
+
+    /**
+     * Get user's average rating from all reviews received
+     * Cette méthode calcule la note moyenne de l'utilisateur
+     */
+    public function averageRating(): float
+    {
+        return $this->receivedReviews()->avg('rating') ?? 0.0;
+    }
+
+    /**
+     * Get all reviews received by this user
+     * Alias pour receivedReviews() pour compatibilité avec le controller
+     */
+    public function reviewsReceived()
+    {
+        return $this->receivedReviews();
+    }
+
+    /**
+     * Calculate total earnings from completed sales
+     * Calcule les gains totaux de l'utilisateur
+     */
+    public function calculateTotalEarnings(): float
+    {
+        return $this->sales()
+                   ->where('status', 'completed')
+                   ->sum('amount') ?? 0.0;
+    }
+
+    // ========== MÉTHODES UTILES EXISTANTES ==========
 
     /**
      * Check if user has liked a specific book
@@ -214,5 +263,102 @@ class User extends Authenticatable
         return $this->avatar 
             ? asset('storage/' . $this->avatar) 
             : 'https://ui-avatars.com/api/?name=' . urlencode($this->name) . '&background=random';
+    }
+
+    // ========== MÉTHODES ADDITIONNELLES POUR LES STATISTIQUES ==========
+
+    /**
+     * Get count of books currently listed for sale
+     */
+    public function getBooksListedCountAttribute(): int
+    {
+        return $this->books()->where('status', 'published')->count();
+    }
+
+    /**
+     * Get count of books sold
+     */
+    public function getBooksSoldCountAttribute(): int
+    {
+        return $this->books()->where('status', 'sold')->count();
+    }
+
+    /**
+     * Get count of favorite books
+     */
+    public function getFavoriteBooksCountAttribute(): int
+    {
+        return $this->likedBooks()->count();
+    }
+
+    /**
+     * Get count of items in cart
+     */
+    public function getCartItemsCountAttribute(): int
+    {
+        return $this->cartItems()->count();
+    }
+
+    /**
+     * Get user statistics for profile
+     */
+    public function getProfileStats(): array
+    {
+        return [
+            'booksListed' => $this->books()->where('status', 'published')->count(),
+            'booksSold' => $this->books()->where('status', 'sold')->count(),
+            'rating' => $this->averageRating(),
+            'reviews' => $this->reviewsReceived()->count(),
+            'totalEarnings' => $this->calculateTotalEarnings(),
+            'favoriteBooks' => $this->likedBooks()->count(),
+            'cartItems' => $this->cartItems()->count(),
+        ];
+    }
+
+    /**
+     * Check if user can be rated (has completed transactions)
+     */
+    public function canBeRated(): bool
+    {
+        return $this->sales()->where('status', 'completed')->exists() ||
+               $this->purchases()->where('status', 'completed')->exists();
+    }
+
+    /**
+     * Get user's reputation level based on rating and transaction count
+     */
+    public function getReputationLevel(): string
+    {
+        $rating = $this->averageRating();
+        $transactionCount = $this->sales()->where('status', 'completed')->count();
+
+        if ($rating >= 4.5 && $transactionCount >= 50) {
+            return 'Expert';
+        } elseif ($rating >= 4.0 && $transactionCount >= 20) {
+            return 'Confirmé';
+        } elseif ($rating >= 3.5 && $transactionCount >= 5) {
+            return 'Expérimenté';
+        } elseif ($transactionCount >= 1) {
+            return 'Débutant';
+        } else {
+            return 'Nouveau';
+        }
+    }
+
+    /**
+     * Get user's activity summary
+     */
+    public function getActivitySummary(): array
+    {
+        return [
+            'totalTransactions' => $this->sales()->count() + $this->purchases()->count(),
+            'completedSales' => $this->sales()->where('status', 'completed')->count(),
+            'completedPurchases' => $this->purchases()->where('status', 'completed')->count(),
+            'averageRating' => $this->averageRating(),
+            'totalReviews' => $this->reviewsReceived()->count(),
+            'reputationLevel' => $this->getReputationLevel(),
+            'memberSince' => $this->created_at->format('Y-m-d'),
+            'lastActivity' => $this->updated_at->format('Y-m-d H:i:s'),
+        ];
     }
 }
