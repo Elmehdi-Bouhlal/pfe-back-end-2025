@@ -16,9 +16,27 @@ class OrderController extends Controller
         try {
             $perPage = $request->input('per_page', 10);
             $status = $request->input('status');
-            
+
             $query = Order::where('user_id', $request->user()->id)
-                ->with(['items.book'])
+                ->with([
+                    'items.book' => function ($q) {
+                        $q->select([
+                            'id',
+                            'title',
+                            'author',
+                            'price',
+                            'currency',
+                            'is_available',
+                            'status',
+                            'book_type',
+                            'book_condition',
+                        ])->with([
+                            'images' => function ($q) {
+                                $q->where('is_primary', true)->select('id', 'book_id', 'image_path');
+                            },
+                        ]);
+                    },
+                ])
                 ->orderBy('created_at', 'desc');
 
             if ($status) {
@@ -46,12 +64,15 @@ class OrderController extends Controller
                             'id' => $item->id,
                             'book_title' => $item->book_title,
                             'book_author' => $item->book_author,
+                            'image_path' => $item->book?->images?->first()?->image_path
+                                ?   $item->book->images->first()->image_path
+                                : null,
                             'quantity' => $item->quantity,
                             'total_price' => $item->total_price,
                             'book_type' => $item->book_type,
-                            'can_download' => $item->can_download
+                            'can_download' => $item->can_download,
                         ];
-                    })
+                    }),
                 ];
             });
 
@@ -62,19 +83,22 @@ class OrderController extends Controller
                     'current_page' => $orders->currentPage(),
                     'last_page' => $orders->lastPage(),
                     'per_page' => $orders->perPage(),
-                    'total' => $orders->total()
-                ]
+                    'total' => $orders->total(),
+                ],
             ]);
         } catch (\Exception $e) {
             Log::error('Error fetching orders:', [
                 'error' => $e->getMessage(),
-                'user_id' => $request->user()->id
+                'user_id' => $request->user()->id,
             ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors du chargement des commandes'
-            ], 500);
+
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Erreur lors du chargement des commandes',
+                ],
+                500,
+            );
         }
     }
 
@@ -83,10 +107,13 @@ class OrderController extends Controller
         try {
             // Verify ownership
             if ($order->user_id !== $request->user()->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Commande non trouvée'
-                ], 404);
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => 'Commande non trouvée',
+                    ],
+                    404,
+                );
             }
 
             $order->load('items.book');
@@ -133,26 +160,31 @@ class OrderController extends Controller
                             'download_count' => $item->download_count,
                             'download_limit' => $item->download_limit,
                             'download_expires_at' => $item->download_expires_at,
-                            'book' => $item->book ? [
-                                'id' => $item->book->id,
-                                'title' => $item->book->title,
-                                'author' => $item->book->author,
-                                'image_url' => $item->book->image_url ?? null
-                            ] : null
+                            'book' => $item->book
+                                ? [
+                                    'id' => $item->book->id,
+                                    'title' => $item->book->title,
+                                    'author' => $item->book->author,
+                                    'image_url' => $item->book->image_url ?? null,
+                                ]
+                                : null,
                         ];
-                    })
-                ]
+                    }),
+                ],
             ]);
         } catch (\Exception $e) {
             Log::error('Error fetching order details:', [
                 'error' => $e->getMessage(),
-                'order_id' => $order->id
+                'order_id' => $order->id,
             ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors du chargement des détails de la commande'
-            ], 500);
+
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Erreur lors du chargement des détails de la commande',
+                ],
+                500,
+            );
         }
     }
 
@@ -161,39 +193,48 @@ class OrderController extends Controller
         try {
             // Verify ownership
             if ($order->user_id !== $request->user()->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Commande non trouvée'
-                ], 404);
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => 'Commande non trouvée',
+                    ],
+                    404,
+                );
             }
 
             // Check if order can be cancelled
             if (!$order->canBeCancelled()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cette commande ne peut plus être annulée'
-                ], 422);
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => 'Cette commande ne peut plus être annulée',
+                    ],
+                    422,
+                );
             }
 
             $order->update([
                 'status' => 'cancelled',
-                'payment_status' => $order->payment_status === 'completed' ? 'refunded' : 'failed'
+                'payment_status' => $order->payment_status === 'completed' ? 'refunded' : 'failed',
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Commande annulée avec succès'
+                'message' => 'Commande annulée avec succès',
             ]);
         } catch (\Exception $e) {
             Log::error('Error cancelling order:', [
                 'error' => $e->getMessage(),
-                'order_id' => $order->id
+                'order_id' => $order->id,
             ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors de l\'annulation de la commande'
-            ], 500);
+
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Erreur lors de l\'annulation de la commande',
+                ],
+                500,
+            );
         }
     }
 
@@ -202,24 +243,30 @@ class OrderController extends Controller
         try {
             // Verify ownership
             if ($order->user_id !== $request->user()->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Commande non trouvée'
-                ], 404);
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => 'Commande non trouvée',
+                    ],
+                    404,
+                );
             }
 
             // Verify order item belongs to order
             if ($orderItem->order_id !== $order->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Article non trouvé dans cette commande'
-                ], 404);
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => 'Article non trouvé dans cette commande',
+                    ],
+                    404,
+                );
             }
 
             // Check if item can be downloaded
             if (!$orderItem->can_download) {
                 $reason = 'Téléchargement non autorisé';
-                
+
                 if ($orderItem->book_type !== 'digital') {
                     $reason = 'Ce n\'est pas un livre numérique';
                 } elseif ($order->payment_status !== 'completed') {
@@ -229,28 +276,37 @@ class OrderController extends Controller
                 } elseif ($orderItem->download_expires_at && $orderItem->download_expires_at->isPast()) {
                     $reason = 'Période de téléchargement expirée';
                 }
-                
-                return response()->json([
-                    'success' => false,
-                    'message' => $reason
-                ], 422);
+
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => $reason,
+                    ],
+                    422,
+                );
             }
 
             // Get the book file
             $book = $orderItem->book;
             if (!$book || !$book->file_path) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Fichier du livre non trouvé'
-                ], 404);
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => 'Fichier du livre non trouvé',
+                    ],
+                    404,
+                );
             }
 
             // Check if file exists
             if (!Storage::disk('private')->exists($book->file_path)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Fichier non disponible'
-                ], 404);
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => 'Fichier non disponible',
+                    ],
+                    404,
+                );
             }
 
             // Increment download count
@@ -262,7 +318,7 @@ class OrderController extends Controller
                 'order_id' => $order->id,
                 'order_item_id' => $orderItem->id,
                 'book_id' => $book->id,
-                'download_count' => $orderItem->download_count
+                'download_count' => $orderItem->download_count,
             ]);
 
             // Return file download
@@ -271,20 +327,22 @@ class OrderController extends Controller
 
             return Storage::disk('private')->download($book->file_path, $filename, [
                 'Content-Type' => $this->getContentType($book->file_format),
-                'Content-Disposition' => 'attachment; filename="' . $filename . '"'
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
             ]);
-
         } catch (\Exception $e) {
             Log::error('Error downloading digital book:', [
                 'error' => $e->getMessage(),
                 'order_id' => $order->id,
-                'order_item_id' => $orderItem->id
+                'order_item_id' => $orderItem->id,
             ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors du téléchargement'
-            ], 500);
+
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Erreur lors du téléchargement',
+                ],
+                500,
+            );
         }
     }
 
@@ -296,7 +354,7 @@ class OrderController extends Controller
             'mobi' => 'application/x-mobipocket-ebook',
             'txt' => 'text/plain',
             'doc' => 'application/msword',
-            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         ];
 
         return $mimeTypes[strtolower($format)] ?? 'application/octet-stream';
