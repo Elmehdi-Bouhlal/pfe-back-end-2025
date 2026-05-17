@@ -27,7 +27,7 @@ class BookController extends Controller
         try {
             // Déterminer le type de livre
             $bookType = $request->input('book_type', 'physical');
-            
+
             // Validation rules de base
             $baseRules = [
                 'title' => 'required|string|max:255',
@@ -43,7 +43,7 @@ class BookController extends Controller
                 'status' => 'nullable|in:draft,published,sold,removed,pending_approval',
                 'pages' => 'nullable|integer|min:1',
             ];
-            
+
             // Règles spécifiques selon le type de livre
             if ($bookType === 'physical') {
                 $specificRules = [
@@ -60,7 +60,8 @@ class BookController extends Controller
                     'free_shipping_above' => 'nullable|boolean',
                     'free_shipping_threshold' => 'nullable|numeric|min:0',
                 ];
-            } else { // digital
+            } else {
+                // digital
                 $specificRules = [
                     'pdf_file' => 'required|file|mimes:pdf|max:151200', // 50MB max
                     'cover_image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
@@ -69,15 +70,18 @@ class BookController extends Controller
                     'sample_content' => 'nullable|string',
                 ];
             }
-            
+
             $validator = Validator::make($request->all(), array_merge($baseRules, $specificRules));
 
             if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => $validator->errors()
-                ], 422);
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => 'Validation failed',
+                        'errors' => $validator->errors(),
+                    ],
+                    422,
+                );
             }
 
             // Start database transaction
@@ -109,16 +113,17 @@ class BookController extends Controller
                 $bookData['shipping_cost'] = $request->input('shipping_cost');
                 $bookData['free_shipping_above'] = $request->boolean('free_shipping_above', false);
                 $bookData['free_shipping_threshold'] = $request->input('free_shipping_threshold');
-                
+
                 // Traitement des arrays pour livres physiques
                 if ($request->has('payment_methods') && is_array($request->input('payment_methods'))) {
                     $bookData['payment_methods'] = json_encode($request->input('payment_methods'));
                 }
-                
+
                 if ($request->has('shipping_cities') && is_array($request->input('shipping_cities'))) {
                     $bookData['shipping_cities'] = json_encode($request->input('shipping_cities'));
                 }
-            } else { // digital
+            } else {
+                // digital
                 $bookData['download_limit'] = $request->input('download_limit');
                 $bookData['sample_content'] = $request->input('sample_content');
                 // Pour les livres numériques, pas de condition physique
@@ -135,12 +140,13 @@ class BookController extends Controller
                 if ($request->hasFile('images')) {
                     $this->handleImageUploads($book, $request->file('images'));
                 }
-            } else { // digital
+            } else {
+                // digital
                 // Handle PDF and cover image for digital books
                 if ($request->hasFile('pdf_file')) {
                     $this->handlePdfUpload($book, $request->file('pdf_file'));
                 }
-                
+
                 if ($request->hasFile('cover_image')) {
                     $this->handleCoverImageUpload($book, $request->file('cover_image'));
                 }
@@ -152,24 +158,29 @@ class BookController extends Controller
             // Load book with relations for response
             $book->load(['images', 'digitalFiles']);
 
-            return response()->json([
-                'success' => true,
-                'message' => ucfirst($bookType) . ' book created successfully',
-                'data' => [
-                    'book' => $book,
-                    'type' => $bookType
-                ]
-            ], 201);
-
+            return response()->json(
+                [
+                    'success' => true,
+                    'message' => ucfirst($bookType) . ' book created successfully',
+                    'data' => [
+                        'book' => $book,
+                        'type' => $bookType,
+                    ],
+                ],
+                201,
+            );
         } catch (\Exception $e) {
             DB::rollback();
             \Log::error('Error creating book: ' . $e->getMessage());
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to create book. Please try again.',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
-            ], 500);
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Failed to create book. Please try again.',
+                    'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+                ],
+                500,
+            );
         }
     }
 
@@ -185,7 +196,7 @@ class BookController extends Controller
         foreach ($images as $index => $image) {
             $filename = time() . '_' . $index . '_' . uniqid() . '.' . $image->getClientOriginalExtension();
             $path = $image->storeAs('books/images', $filename, 'public');
-            
+
             Log::info('Physical book image path: ' . $path);
 
             BookImage::create([
@@ -213,9 +224,9 @@ class BookController extends Controller
         try {
             $filename = time() . '_' . Str::random(10) . '.pdf';
             $path = $pdfFile->storeAs('books/pdf', $filename, 'public');
-            
+
             Log::info('PDF upload path: ' . $path);
-            
+
             BookDigitalFile::create([
                 'book_id' => $book->id,
                 'file_type' => 'pdf',
@@ -225,7 +236,6 @@ class BookController extends Controller
                 'mime_type' => $pdfFile->getMimeType(),
                 'is_active' => true,
             ]);
-            
         } catch (\Exception $e) {
             \Log::error('Error uploading PDF: ' . $e->getMessage());
             throw $e;
@@ -244,9 +254,9 @@ class BookController extends Controller
         try {
             $filename = time() . '_cover_' . Str::random(10) . '.' . $coverImage->extension();
             $path = $coverImage->storeAs('books/covers', $filename, 'public');
-            
+
             Log::info('Cover image upload path: ' . $path);
-            
+
             BookImage::create([
                 'book_id' => $book->id,
                 'image_path' => $path,
@@ -257,7 +267,6 @@ class BookController extends Controller
                 'is_primary' => true,
                 'alt_text' => $book->title . ' cover',
             ]);
-            
         } catch (\Exception $e) {
             \Log::error('Error uploading cover image: ' . $e->getMessage());
             throw $e;
@@ -282,7 +291,7 @@ class BookController extends Controller
                 },
                 'digitalFiles' => function ($q) {
                     $q->where('is_active', true);
-                }
+                },
             ]);
 
             // Apply search filter
@@ -332,14 +341,14 @@ class BookController extends Controller
             // Add primary image URLs
             foreach ($books as $book) {
                 if (isset($book->images) && count($book->images) > 0) {
-                    $book->primary_image = "http://localhost:8000/storage/" . $book->images[0]->image_path;
+                    $book->primary_image = 'http://localhost:8000/storage/' . $book->images[0]->image_path;
                 }
-                
+
                 // Add PDF download URL for digital books
                 if ($book->book_type === 'digital' && $book->digitalFiles->count() > 0) {
                     $pdfFile = $book->digitalFiles->where('file_type', 'pdf')->first();
                     if ($pdfFile) {
-                        $book->pdf_download_url = "http://localhost:8000/storage/" . $pdfFile->file_path;
+                        $book->pdf_download_url = 'http://localhost:8000/storage/' . $pdfFile->file_path;
                         $book->pdf_size = $pdfFile->file_size;
                     }
                 }
@@ -347,17 +356,19 @@ class BookController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $books
+                'data' => $books,
             ]);
-
         } catch (\Exception $e) {
             \Log::error('Error fetching books: ' . $e->getMessage());
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch books',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
-            ], 500);
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Failed to fetch books',
+                    'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+                ],
+                500,
+            );
         }
     }
 
@@ -376,13 +387,19 @@ class BookController extends Controller
                 },
                 'digitalFiles' => function ($query) {
                     $query->where('is_active', true);
-                }
+                },
+                'likes' => function ($query) {
+                    $query->where('user_id', auth()->id())
+                          ->select('id', 'book_id', 'user_id');
+                },
             ])->findOrFail($id);
+
+            $isFavorited = $book->likes->isNotEmpty();
 
             // Add full URLs for images
             if ($book->images->count() > 0) {
                 foreach ($book->images as $image) {
-                    $image->full_url = "http://localhost:8000/storage/" . $image->image_path;
+                    $image->full_url = 'http://localhost:8000/storage/' . $image->image_path;
                 }
             }
 
@@ -391,31 +408,38 @@ class BookController extends Controller
                 $pdfFile = $book->digitalFiles->where('file_type', 'pdf')->first();
                 if ($pdfFile) {
                     $book->pdf_info = [
-                        'download_url' => "http://localhost:8000/storage/" . $pdfFile->file_path,
+                        'download_url' => 'http://localhost:8000/storage/' . $pdfFile->file_path,
                         'file_size' => $pdfFile->file_size,
                         'file_name' => $pdfFile->file_name,
                     ];
                 }
             }
 
+            $book['is_favorited'] = $isFavorited;
+
             return response()->json([
                 'success' => true,
-                'data' => $book
+                'data' => $book,
             ]);
-
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Book not found'
-            ], 404);
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Book not found',
+                ],
+                404,
+            );
         } catch (\Exception $e) {
             \Log::error('Error fetching book: ' . $e->getMessage());
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch book',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
-            ], 500);
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Failed to fetch book',
+                    'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+                ],
+                500,
+            );
         }
     }
 
@@ -458,7 +482,7 @@ class BookController extends Controller
     {
         try {
             $book = Book::where('book_type', 'digital')->findOrFail($id);
-            
+
             // TODO: Vérifier si l'utilisateur a acheté ce livre
             // $user = auth()->user();
             // if (!$book->canBeDownloadedBy($user)) {
@@ -466,38 +490,46 @@ class BookController extends Controller
             // }
 
             $pdfFile = $book->digitalFiles()->where('file_type', 'pdf')->where('is_active', true)->first();
-            
+
             if (!$pdfFile) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'PDF file not found'
-                ], 404);
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => 'PDF file not found',
+                    ],
+                    404,
+                );
             }
 
             $filePath = storage_path('app/public/' . $pdfFile->file_path);
-            
+
             if (!file_exists($filePath)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'File not found on server'
-                ], 404);
+                return response()->json(
+                    [
+                        'success' => false,
+                        'message' => 'File not found on server',
+                    ],
+                    404,
+                );
             }
 
             return response()->download($filePath, $pdfFile->file_name);
-
         } catch (\Exception $e) {
             \Log::error('Error downloading digital book: ' . $e->getMessage());
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to download book'
-            ], 500);
+
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Failed to download book',
+                ],
+                500,
+            );
         }
     }
 
     /**
      * Record a view for a book
-     * 
+     *
      * @param Request $request
      * @param int $id
      * @return JsonResponse
@@ -517,24 +549,29 @@ class BookController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'View recorded successfully'
+                'message' => 'View recorded successfully',
             ]);
-
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Book not found'
-            ], 404);
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Book not found',
+                ],
+                404,
+            );
         } catch (\Exception $e) {
             \Log::error('Error recording view: ' . $e->getMessage());
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to record view'
-            ], 500);
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Failed to record view',
+                ],
+                500,
+            );
         }
     }
-      /**
+    /**
      * Search books
      *
      * @param Request $request
@@ -549,7 +586,7 @@ class BookController extends Controller
             $books = Book::with([
                 'images' => function ($query) {
                     $query->orderBy('sort_order');
-                }
+                },
             ])
                 // comment for the moment because we are not manage this
                 // ->where('status', 'published')
@@ -565,17 +602,19 @@ class BookController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $books
+                'data' => $books,
             ]);
-
         } catch (\Exception $e) {
             \Log::error('Error searching books: ' . $e->getMessage());
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to search books',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
-            ], 500);
+            return response()->json(
+                [
+                    'success' => false,
+                    'message' => 'Failed to search books',
+                    'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+                ],
+                500,
+            );
         }
     }
 }
