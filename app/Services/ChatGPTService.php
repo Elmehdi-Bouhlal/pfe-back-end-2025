@@ -8,7 +8,7 @@ use Exception;
 
 /**
  * Service for integrating with ChatGPT API for book analysis
- * 
+ *
  * @package App\Services
  */
 class ChatGPTService
@@ -26,7 +26,7 @@ class ChatGPTService
         $this->model = config('services.openai.model', 'gpt-4');
         $this->maxTokens = config('services.openai.max_tokens', 4000);
         $this->temperature = config('services.openai.temperature', 0.7);
-        
+
         if (empty($this->apiKey)) {
             throw new Exception('OpenAI API key not configured');
         }
@@ -45,23 +45,22 @@ class ChatGPTService
         try {
             // Prepare the prompt for book analysis
             $prompt = $this->buildAnalysisPrompt($content, $metadata);
-            
+
             // Make API request to ChatGPT
             $response = $this->makeAPIRequest($prompt);
-     
+
             $analysisResult = $this->parseAnalysisResponse($response);
             Log::info(json_encode($analysisResult));
             Log::info('ChatGPT Analysis Completed', [
                 'token_usage' => $response['usage'] ?? null,
-                'model' => $this->model
+                'model' => $this->model,
             ]);
-            
+
             return $analysisResult;
-            
         } catch (Exception $e) {
             Log::error('ChatGPT Analysis Error', [
                 'error' => $e->getMessage(),
-                'metadata' => $metadata
+                'metadata' => $metadata,
             ]);
             throw $e;
         }
@@ -76,7 +75,7 @@ class ChatGPTService
         $pageCount = $metadata['pages'] ?? 'inconnu';
         $wordCount = $metadata['word_count'] ?? 'inconnu';
 
-        return "Tu es un expert littéraire et analyste de contenu spécialisé dans la création de résumés détaillés et structurés de livres. 
+        return "Tu es un expert littéraire et analyste de contenu spécialisé dans la création de résumés détaillés et structurés de livres.
 
 INFORMATIONS SUR LE DOCUMENT:
 - Nom du fichier: {$filename}
@@ -96,19 +95,19 @@ Analyse ce contenu et crée un résumé complet sous forme de livre digital pagi
   \"publishYear\": 2023,
   \"isbn\": \"ISBN si trouvé ou null\",
   \"publisher\": \"Éditeur si trouvé ou null\",
-  
+
   \"pages\": 250,
   \"readingTime\": \"4h 30min\",
   \"difficulty\": \"Intermédiaire\",
   \"rating\": 4.2,
   \"wordCount\": 75000,
-  
+
   \"genre\": \"Genre principal\",
   \"subgenres\": [\"Sous-genre 1\", \"Sous-genre 2\"],
   \"tags\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],
   \"topics\": [\"Sujet 1\", \"Sujet 2\", \"Sujet 3\"],
   \"targetAudience\": \"Public cible\",
-  
+
   \"summary\": [
     {
       \"chapter\": \"Introduction\",
@@ -136,7 +135,7 @@ Analyse ce contenu et crée un résumé complet sous forme de livre digital pagi
       ]
     }
   ],
-  
+
   \"mainThemes\": [\"Thème 1\", \"Thème 2\", \"Thème 3\"],
   \"keyTakeaways\": [
     \"Leçon principale numéro 1\",
@@ -151,7 +150,7 @@ Analyse ce contenu et crée un résumé complet sous forme de livre digital pagi
     \"Point faible identifié\",
     \"Autre limitation\"
   ],
-  
+
   \"similarBooks\": [
     {
       \"title\": \"Livre similaire 1\",
@@ -159,9 +158,11 @@ Analyse ce contenu et crée un résumé complet sous forme de livre digital pagi
       \"reason\": \"Pourquoi il est similaire\"
     }
   ],
-  
+
   \"analysisMetadata\": {
-    \"analysisDate\": \"" . now()->toISOString() . "\",
+    \"analysisDate\": \"" .
+            now()->toISOString() .
+            "\",
     \"processingTime\": 45.2,
     \"confidence\": 4,
     \"model\": \"ChatGPT-4\",
@@ -190,31 +191,32 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
     {
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . $this->apiKey,
-            'Content-Type' => 'application/json'
+            'Content-Type' => 'application/json',
         ])
-        ->timeout(300) // 5 minutes timeout
-        ->post($this->baseUrl . '/chat/completions', [
-            'model' => $this->model,
-            'messages' => [
-                [
-                    'role' => 'system',
-                    'content' => 'Tu es un expert littéraire et analyste de contenu. Tu créés des résumés structurés et détaillés de livres sous forme JSON.'
+            ->timeout(300) // 5 minutes timeout
+            ->post($this->baseUrl . '/chat/completions', [
+                'model' => $this->model,
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' =>
+                            'Tu es un expert littéraire et analyste de contenu. Tu créés des résumés structurés et détaillés de livres sous forme JSON.',
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => $prompt,
+                    ],
                 ],
-                [
-                    'role' => 'user', 
-                    'content' => $prompt
-                ]
-            ],
-            'max_tokens' => $this->maxTokens,
-            'temperature' => $this->temperature,
-            'response_format' => ['type' => 'json_object']
-        ]);
+                'max_tokens' => $this->maxTokens,
+                'temperature' => $this->temperature,
+                'response_format' => ['type' => 'json_object'],
+            ]);
 
         if (!$response->successful()) {
             $error = $response->json()['error'] ?? [];
             $errorMessage = $error['message'] ?? 'Unknown API error';
             $errorCode = $error['code'] ?? 'api_error';
-            
+
             throw new Exception("ChatGPT API Error [{$errorCode}]: {$errorMessage}");
         }
 
@@ -231,21 +233,21 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
         }
 
         $content = $response['choices'][0]['message']['content'];
-        
+
         // Decode JSON response
         $analysisResult = json_decode($content, true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             Log::error('JSON Decode Error', [
                 'error' => json_last_error_msg(),
-                'content' => $content
+                'content' => $content,
             ]);
             throw new Exception('Invalid JSON response from ChatGPT: ' . json_last_error_msg());
         }
 
         // Validate required fields and add defaults
         $analysisResult = $this->validateAndEnhanceResult($analysisResult);
-        
+
         return $analysisResult;
     }
 
@@ -270,7 +272,7 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
             'keyTakeaways' => [],
             'strengths' => [],
             'weaknesses' => [],
-            'similarBooks' => []
+            'similarBooks' => [],
         ];
 
         // Merge with defaults
@@ -279,7 +281,7 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
         // Validate and fix specific fields
         $result['rating'] = max(1.0, min(5.0, (float) $result['rating']));
         $result['pages'] = max(1, (int) $result['pages']);
-        
+
         // Ensure arrays are arrays
         $arrayFields = ['tags', 'summary', 'mainThemes', 'keyTakeaways', 'strengths', 'weaknesses', 'similarBooks'];
         foreach ($arrayFields as $field) {
@@ -302,13 +304,10 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
                     'content' => [
                         'Ce document a été analysé automatiquement.',
                         'Le contenu principal traite de sujets variés.',
-                        'Une analyse plus détaillée pourrait nécessiter un document plus structuré.'
+                        'Une analyse plus détaillée pourrait nécessiter un document plus structuré.',
                     ],
-                    'keyPoints' => [
-                        'Document analysé automatiquement',
-                        'Contenu extractable limité'
-                    ]
-                ]
+                    'keyPoints' => ['Document analysé automatiquement', 'Contenu extractable limité'],
+                ],
             ];
         }
 
@@ -319,7 +318,7 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
                 'processingTime' => 0,
                 'confidence' => 3,
                 'model' => $this->model,
-                'language' => 'fr'
+                'language' => 'fr',
             ];
         }
 
@@ -333,7 +332,7 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
     {
         try {
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->apiKey
+                'Authorization' => 'Bearer ' . $this->apiKey,
             ])->get($this->baseUrl . '/models');
 
             if ($response->successful()) {
@@ -353,7 +352,7 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
     {
         try {
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->apiKey
+                'Authorization' => 'Bearer ' . $this->apiKey,
             ])->get($this->baseUrl . '/models');
 
             return $response->successful();
@@ -369,31 +368,31 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type' => 'application/json'
+                'Content-Type' => 'application/json',
             ])
-            ->timeout(300)
-            ->post($this->baseUrl . '/chat/completions', [
-                'model' => $this->model,
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un assistant IA spécialisé dans la création de résumés clairs et concis. Réponds toujours en français avec des points bien structurés.'
+                ->timeout(300)
+                ->post($this->baseUrl . '/chat/completions', [
+                    'model' => $this->model,
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' =>
+                                'Tu es un assistant IA spécialisé dans la création de résumés clairs et concis',
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $prompt,
+                        ],
                     ],
-                    [
-                        'role' => 'user', 
-                        'content' => $prompt
-                    ]
-                ],
-                'max_tokens' => 1000,
-                'temperature' => 0.3,
-            ]);
+                    'max_tokens' => 1000,
+                    'temperature' => 0.3,
+                ]);
 
             if (!$response->successful()) {
-                throw new Exception("ChatGPT API Error");
+                throw new Exception('ChatGPT API Error');
             }
 
             return trim($response->json()['choices'][0]['message']['content']);
-            
         } catch (Exception $e) {
             Log::error('ChatGPT Summary Error', ['error' => $e->getMessage()]);
             throw new Exception('Failed to generate summary: ' . $e->getMessage());
@@ -408,31 +407,37 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type' => 'application/json'
+                'Content-Type' => 'application/json',
             ])
-            ->timeout(300)
-            ->post($this->baseUrl . '/chat/completions', [
-                'model' => $this->model,
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un enseignant expert qui explique des concepts complexes de manière simple et accessible. Réponds toujours en français.'
+                ->timeout(300)
+                ->post($this->baseUrl . '/chat/completions', [
+                    'model' => $this->model,
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' =>
+                                'Tu es un enseignant expert qui explique des concepts complexes de manière simple et accessible',
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $prompt,
+                        ],
                     ],
-                    [
-                        'role' => 'user', 
-                        'content' => $prompt
-                    ]
-                ],
-                'max_tokens' => 1500,
-                'temperature' => 0.5,
+                    'max_tokens' => 1500,
+                    'temperature' => 0.5,
+                ]);
+
+            // Logger la réponse complète pour débugger
+            Log::info('ChatGPT Response', [
+                'status' => $response->status(),
+                'body' => $response->json(),
             ]);
 
             if (!$response->successful()) {
-                throw new Exception("ChatGPT API Error");
+                throw new Exception('ChatGPT API Error: ' . $response->status() . ' - ' . $response->body());
             }
 
             return trim($response->json()['choices'][0]['message']['content']);
-            
         } catch (Exception $e) {
             Log::error('ChatGPT Explanation Error', ['error' => $e->getMessage()]);
             throw new Exception('Failed to explain concepts: ' . $e->getMessage());
@@ -446,34 +451,34 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
     {
         try {
             $prompt = $context . "\n\nQuestion: " . $question;
-            
+
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type' => 'application/json'
+                'Content-Type' => 'application/json',
             ])
-            ->timeout(300)
-            ->post($this->baseUrl . '/chat/completions', [
-                'model' => $this->model,
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un assistant de lecture intelligent qui aide les utilisateurs à comprendre leurs livres. Réponds toujours en français de manière conversationnelle et utile.'
+                ->timeout(300)
+                ->post($this->baseUrl . '/chat/completions', [
+                    'model' => $this->model,
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' =>
+                                'Tu es un assistant de lecture intelligent qui aide les utilisateurs à comprendre leurs livres.',
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $prompt,
+                        ],
                     ],
-                    [
-                        'role' => 'user', 
-                        'content' => $prompt
-                    ]
-                ],
-                'max_tokens' => 800,
-                'temperature' => 0.7,
-            ]);
+                    'max_tokens' => 800,
+                    'temperature' => 0.7,
+                ]);
 
             if (!$response->successful()) {
-                throw new Exception("ChatGPT API Error");
+                throw new Exception('ChatGPT API Error');
             }
 
             return trim($response->json()['choices'][0]['message']['content']);
-            
         } catch (Exception $e) {
             Log::error('ChatGPT Chat Error', ['error' => $e->getMessage()]);
             throw new Exception('Failed to generate chat response: ' . $e->getMessage());
@@ -488,36 +493,36 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type' => 'application/json'
+                'Content-Type' => 'application/json',
             ])
-            ->timeout(300)
-            ->post($this->baseUrl . '/chat/completions', [
-                'model' => $this->model,
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un bibliothécaire expert qui recommande des livres basés sur les préférences de lecture. Réponds toujours en français avec des recommandations détaillées.'
+                ->timeout(300)
+                ->post($this->baseUrl . '/chat/completions', [
+                    'model' => $this->model,
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' =>
+                                'Tu es un bibliothécaire expert qui recommande des livres basés sur les préférences de lecture.',
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $prompt,
+                        ],
                     ],
-                    [
-                        'role' => 'user', 
-                        'content' => $prompt
-                    ]
-                ],
-                'max_tokens' => 2000,
-                'temperature' => 0.8,
-            ]);
+                    'max_tokens' => 2000,
+                    'temperature' => 0.8,
+                ]);
 
             if (!$response->successful()) {
-                throw new Exception("ChatGPT API Error");
+                throw new Exception('ChatGPT API Error');
             }
 
             $content = trim($response->json()['choices'][0]['message']['content']);
-            
+
             return [
                 'type' => 'text',
-                'content' => $content
+                'content' => $content,
             ];
-            
         } catch (Exception $e) {
             Log::error('ChatGPT Recommendations Error', ['error' => $e->getMessage()]);
             throw new Exception('Failed to generate recommendations: ' . $e->getMessage());
@@ -532,36 +537,36 @@ Si le contenu n'est pas un livre ou est insuffisant, crée quand même une struc
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type' => 'application/json'
+                'Content-Type' => 'application/json',
             ])
-            ->timeout(300)
-            ->post($this->baseUrl . '/chat/completions', [
-                'model' => $this->model,
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un expert en méthodes d\'étude qui crée des notes d\'étude efficaces et bien organisées. Réponds toujours en français.'
+                ->timeout(300)
+                ->post($this->baseUrl . '/chat/completions', [
+                    'model' => $this->model,
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' =>
+                                'Tu es un expert en méthodes d\'étude qui crée des notes d\'étude efficaces et bien organisées.',
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $prompt,
+                        ],
                     ],
-                    [
-                        'role' => 'user', 
-                        'content' => $prompt
-                    ]
-                ],
-                'max_tokens' => 3000,
-                'temperature' => 0.4,
-            ]);
+                    'max_tokens' => 3000,
+                    'temperature' => 0.4,
+                ]);
 
             if (!$response->successful()) {
-                throw new Exception("ChatGPT API Error");
+                throw new Exception('ChatGPT API Error');
             }
 
             $content = trim($response->json()['choices'][0]['message']['content']);
-            
+
             return [
                 'type' => 'text',
-                'content' => $content
+                'content' => $content,
             ];
-            
         } catch (Exception $e) {
             Log::error('ChatGPT Study Notes Error', ['error' => $e->getMessage()]);
             throw new Exception('Failed to generate study notes: ' . $e->getMessage());
